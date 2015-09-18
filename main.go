@@ -3,11 +3,11 @@ package main
 import (
 	//"html/template"
 	"encoding/base64"
-	"log"
+	"fmt"
 	"html/template"
+	"log"
 	"net/http"
-    "os"
-    "fmt"
+	"os"
 
 	"github.com/gorilla/pat"
 	"github.com/gorilla/securecookie"
@@ -15,6 +15,7 @@ import (
 	"github.com/justinas/alice"
 	"github.com/justinas/nosurf"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"gopkg.in/authboss.v0"
 	aboauth2 "gopkg.in/authboss.v0/oauth2"
 )
@@ -24,7 +25,7 @@ var ab = authboss.New()
 var database = NewMemStorer()
 
 type ProviderInfo struct {
-    Name string
+	Name string
 }
 
 var templates = template.Must(template.ParseFiles("assets/templates/providers.tmpl"))
@@ -49,7 +50,7 @@ func main() {
 				ClientID:     "451002691710-h1mcjlqe0bfacdiq27kj3me5m02riu8k.apps.googleusercontent.com",
 				ClientSecret: "x0gmxkQMubibAKS9aN_9bYJi",
 				Scopes:       []string{"profile", "email"},
-				Endpoint:     aboauth2.GoogleEndpoint,
+				Endpoint: google.Endpoint,
 			},
 			Callback: aboauth2.Google,
 		},
@@ -62,6 +63,10 @@ func main() {
 	ab.Mailer = authboss.LogMailer(os.Stdout)
 	ab.CookieStoreMaker = NewCookieStorer
 	ab.SessionStoreMaker = NewCookieStorer
+
+	if err := ab.Init(); err != nil {
+		log.Fatal(err)
+	}
 
 	// Routing
 	pat := pat.New()
@@ -83,10 +88,10 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	//t, _ := template.ParseFiles("providers.tmpl")
 	//t.Execute(w, template.HTML(`<b>World</b>`))
 	templates.ExecuteTemplate(w, "providers.tmpl", nil)
-    //data := layoutData(w, req)
-    //r.HTML(w, http.StatusOK, "index", "{a:123}")
-    //w.Write([]byte("Invalid ID or name"))
-    //w.WriteHeader(400)
+	//data := layoutData(w, req)
+	//r.HTML(w, http.StatusOK, "index", "{a:123}")
+	//w.Write([]byte("Invalid ID or name"))
+	//w.WriteHeader(400)
 }
 
 func logger(h http.Handler) http.Handler {
