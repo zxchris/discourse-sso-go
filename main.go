@@ -44,6 +44,12 @@ type config struct {
 	BindAddr string
 }
 
+type ssoPayload struct {
+	nonce string
+	email string
+	external_id string
+}
+
 var cfg config
 var templates = template.Must(template.ParseFiles("assets/templates/providers.tmpl"))
 
@@ -111,6 +117,7 @@ func main() {
 	pat := pat.New()
 	pat.PathPrefix("/auth").Handler(ab.NewRouter())
 	pat.Path("/discourse").Methods("GET").HandlerFunc(discourseSSO)
+	pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
 
 	stack := alice.New(logger, ab.ExpireMiddleware).Then(pat)
 
@@ -194,13 +201,67 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
 		log.Printf("%+v\n", userInter)
 
+		var payload = ssoPayload {
+			email: currentEmail,
+			external_id: currentUID,
+		}
+		var signature = base64.StdEncoding.encode_base64( ssoPayload )
+
 		w.WriteHeader(201)
-		w.Write([]byte(currentUserName))
+		w.Write([]byte(signature))
 
 	} else {
 		templates.ExecuteTemplate(w, "providers.tmpl", nil)
 	}
 }
+
+// {
+//    # Validate SSO signature
+//    #
+//    my $signature = $self->param('sig');
+//    my $payload   = $self->param('sso');
+//
+//    my $secret    = $self->config->{discourse}->{sso_secret};
+//    my $check_sig = hmac_sha256_hex( $payload, $secret );
+//
+//    return $self->render( json => { error => "Invalid request"}, status => 401 ) unless $check_sig eq $signature;
+//
+//    my $email = $self->user_email;
+//    my $id    = $self->user_id;
+//
+//    # Decode the SSO payload
+//    my $req = Mojo::URL->new();
+//    $req->query( decode_base64( $payload ) );
+//    my $nonce  = $req->query->param('nonce');
+//    my $return = $req->query->param('return_sso_url');
+//
+//    $nonce   =~ s/^nonce=//; # Strip the nonce= off the front
+//
+//    # Use the configured return URL, falling back to the SSO payload provided
+//    my $url = Mojo::URL->new( $self->config->{discourse}->{sso_callback_url} || $return );
+//
+//    my $username;
+//    $_ = $self->user_email;
+//    s/(\w+?)\@/$username = $1/e; # Use first part of email as username
+//
+//    $url->query(nonce    => $nonce,
+//                #name     => '',
+//                #username => $username,
+//                email     => $self->user_email,
+//                external_id => $self->user_id
+//               );
+//
+//
+//    $payload = encode_base64( $url->query->to_string );
+//
+//    $signature  = hmac_sha256_hex( $payload, $secret );
+//
+//    $url->query( sso => $payload, sig => $signature );
+//
+//    return $self->redirect_to( $url->to_string );
+//}
+
+    
 
 func logger(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
