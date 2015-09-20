@@ -15,8 +15,8 @@ type User struct {
 	Name string
 
 	// Auth
-	Email    string
-	Password string
+	//Email    string
+	//Password string
 
 	// OAuth2
 	Oauth2Uid      string
@@ -25,18 +25,23 @@ type User struct {
 	Oauth2Refresh  string
 	Oauth2Expiry   time.Time
 
+	Email         string
+	GooglePicture string
+	GoogleName    string
+	GoogleLink    string
+
 	// Confirm
-	ConfirmToken string
-	Confirmed    bool
+	//ConfirmToken string
+	//Confirmed    bool
 
 	// Lock
-	AttemptNumber int64
-	AttemptTime   time.Time
-	Locked        time.Time
+	//AttemptNumber int64
+	//AttemptTime   time.Time
+	//Locked        time.Time
 
 	// Recover
-	RecoverToken       string
-	RecoverTokenExpiry time.Time
+	//RecoverToken       string
+	//RecoverTokenExpiry time.Time
 
 	// Remember is in another table
 }
@@ -48,15 +53,7 @@ type MemStorer struct {
 
 func NewMemStorer() *MemStorer {
 	return &MemStorer{
-		Users: map[string]User{
-			"zeratul@heroes.com": User{
-				ID:        1,
-				Name:      "Zeratul",
-				Password:  "$2a$10$XtW/BrS5HeYIuOCXYe8DFuInetDMdaarMUJEOg/VA/JAIDgw3l4aG", // pass = 1234
-				Email:     "zeratul@heroes.com",
-				Confirmed: true,
-			},
-		},
+		Users:  make(map[string]User),
 		Tokens: make(map[string][]string),
 	}
 }
