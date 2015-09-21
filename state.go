@@ -1,11 +1,11 @@
 package main
 
 import (
-	"encoding/json"
-	"encoding/base64"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	//"encoding/base64"
 	"errors"
 	//"fmt"
@@ -13,25 +13,20 @@ import (
 	"log"
 )
 
-type RequestState struct {
-	Nonce     string
-	ReturnURL string
-}
-
 func EncodeState(v interface{}) (string, error) {
 
-	stateJson, err := json.Marshal(v) // XXX Why does this produce empty JSON ? XXX
+	stateJson, err := json.Marshal(v)
 	if err != nil {
-		return "",err
+		return "", err
 	}
 	log.Println(v)
 
 	log.Printf("first json: '%s'\n", string(stateJson))
-	
-	cipher,err := encrypt( cfg.AESKey, stateJson )
+
+	cipher, err := encrypt(cfg.AESKey, stateJson)
 	if err != nil {
 		log.Printf("Error producing cipher")
-		return "",err
+		return "", err
 	}
 
 	res := base64.URLEncoding.EncodeToString(cipher)
@@ -39,8 +34,17 @@ func EncodeState(v interface{}) (string, error) {
 	return res, nil
 }
 
-func DecodeState() interface{} {
-	return nil
+func DecodeState( state string ) (interface{}, error) {
+
+	cipher, _ := base64.URLEncoding.DecodeString(state)
+
+	text, err := decrypt(cfg.AESKey, cipher)
+	if err != nil {
+		log.Printf("Error decrypting cipher")
+		return nil, err
+	}
+
+	return text,nil
 }
 
 func encrypt(key, text []byte) ([]byte, error) {

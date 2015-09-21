@@ -47,12 +47,12 @@ type config struct {
 	GoogleClientSecret string
 	BindAddr           string
 	HMAC256Secret      []byte
-	AESKey			   []byte
+	AESKey             []byte
 }
 
 type ssoRequest struct {
-	nonce     string
-	returnUrl string
+	Nonce     string
+	ReturnURL string
 }
 
 var cfg config
@@ -255,42 +255,51 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(u.String()))
 
 	} else {
-		state, err := EncodeState(ssor)
+		state, err := EncodeState(*ssor)
 		if err != nil {
 			w.WriteHeader(400)
 			w.Write([]byte("Cannot process request"))
 			return
 		}
 		log.Printf("Encrypted state: '%s'\n", state)
-		
-		templates.ExecuteTemplate(w, "providers.tmpl", nil)
+
+		yy, _ := DecodeState(state)
+		xx := yy.(ssoRequest)
+		log.Printf("Decoded state:\n")
+		log.Println(xx)
+
+		templates.ExecuteTemplate(w, "providers.tmpl", map[string]string{
+			"State": state,
+			})
 	}
 }
 
 // returns ssoRequest and error state
 func decodeSSO(req *http.Request) *ssoRequest {
 
-	query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
+		query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
+	
+		log.Printf("Request sso content: %s", string(query))
+	
+		if err != nil {
+			return nil
+		}
+		log.Printf("Decodeing request...")
+		q, err := url.ParseQuery(string(query))
+		log.Println(q)
 
-	log.Printf("Request sso content: %s", string(query))
+		ssor := &ssoRequest{}
 
-	if err != nil {
-		return nil
-	}
-	log.Printf("Decodeing request...")
-	q, err := url.ParseQuery(string(query))
-	log.Println(q)
+		if n, ok := q["nonce"]; ok {
+			ssor.Nonce = n[0]
+		}
+		if n, ok := q["return"]; ok {
+			ssor.ReturnURL = n[0]
+		}
 
-	ssor := &ssoRequest{}
+	ssor.Nonce = "This is a nonce"
+	ssor.ReturnURL = "http://www.google.com"
 
-	if n, ok := q["nonce"]; ok {
-		ssor.nonce = n[0]
-	}
-	if n, ok := q["return"]; ok {
-		ssor.returnUrl = n[0]
-	}
-ssor.nonce = "This is a nonce"
-ssor.returnUrl = "http://www.google.com"
 	return ssor
 }
 
