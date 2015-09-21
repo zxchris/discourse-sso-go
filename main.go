@@ -4,12 +4,17 @@ import (
 	//"html/template"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"crypto/hmac"
+	"crypto/sha256"
+
 
 	"github.com/gorilla/pat"
 	"github.com/gorilla/securecookie"
@@ -42,6 +47,7 @@ type config struct {
 	GoogleClientID string
 	GoogleClientSecret string
 	BindAddr string
+	HMAC256Secret string
 }
 
 type ssoPayload struct {
@@ -76,6 +82,9 @@ func main() {
 	if v := os.Getenv("GOOGLE_CLIENT_SECRET"); len(v) > 0 {
 		cfg.GoogleClientSecret = v
 	}
+	if v := os.Getenv("HMAC_256_SECRET"); len(v) > 0 {
+		cfg.HMAC256Secret = v
+	}
 
 	cookieStoreKey, _ := base64.StdEncoding.DecodeString(cfg.CookieKey)
 	sessionStoreKey, _ := base64.StdEncoding.DecodeString(cfg.SessionKey)
@@ -104,7 +113,13 @@ func main() {
 	ab.XSRFMaker = func(_ http.ResponseWriter, r *http.Request) string {
 		return nosurf.Token(r)
 	}
-
+	// Make sure login expires quickly, as we don't need or want to cache the
+	// login for long (user info is stored in memory and linked to by a cookie.
+  // If the server restarts, the cookie will be out of sync with the memory
+  // store (now empty) and generate "User is unknown" error).
+	// We're just acting as a proxy between Discourse and OAuth2, so holding onto
+	// the login state is not necessary.
+  ab.ExpireAfter = 10; // 10 Second expiry of login
 	ab.Mailer = authboss.LogMailer(os.Stdout)
 	ab.CookieStoreMaker = NewCookieStorer
 	ab.SessionStoreMaker = NewCookieStorer
@@ -201,18 +216,57 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
 		log.Printf("%+v\n", userInter)
 
-		var payload = ssoPayload {
-			email: currentEmail,
-			external_id: currentUID,
-		}
-		var signature = base64.StdEncoding.encode_base64( ssoPayload )
+
+
+		u, _ := url.Parse("")
+		q := u.Query()
+		q.Set("email", currentEmail)
+		q.Set("external_id", currentUID)
+		q.Set("name", currentUserName)
+
+		var payload = base64.URLEncoding.EncodeToString([]byte( q.Encode() ))
+		log.Printf("%s\n",payload)
+
+		sig := getSignature(payload)
+
+		u, _ = url.Parse("http://where.discourse.is")
+		q = u.Query()
+		q.Set( "sso", payload)
+		//q.Set( "sig", hex.EncodeToString(mac.Sum(nil)))
+		q.Set( "sig", hex.EncodeToString(sig))
+		u.RawQuery = q.Encode()
+		log.Println(u)
 
 		w.WriteHeader(201)
-		w.Write([]byte(signature))
+		//w.Write([]byte(signature))
+		w.Write([]byte(u.String()))
 
 	} else {
 		templates.ExecuteTemplate(w, "providers.tmpl", nil)
 	}
+}
+
+//func decodeSSO (req *http.Request) {
+//}
+
+func getSignature( payload string ) []byte {
+	hmac_key, _ := base64.StdEncoding.DecodeString(cfg.HMAC256Secret)
+	mac := hmac.New(sha256.New, hmac_key)
+	mac.Write([]byte(payload))
+	return mac.Sum(nil)
+}
+
+func verifyRequest( req *http.Request) bool {
+	signature,err := base64.URLEncoding.DecodeString(req.FormValue("sig"))
+
+	if( err != nil ) {
+		return false
+	}
+
+	payload := req.FormValue("sso")
+	newsig := getSignature(payload)
+
+	return hmac.Equal( newsig, signature)
 }
 
 // {
@@ -261,7 +315,7 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 //    return $self->redirect_to( $url->to_string );
 //}
 
-    
+
 
 func logger(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
