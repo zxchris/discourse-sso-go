@@ -6,9 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	//"encoding/base64"
+	"encoding/base64"
 	"errors"
-	//"fmt"
 	"io"
 	"log"
 )
@@ -34,17 +33,18 @@ func EncodeState(v interface{}) (string, error) {
 	return res, nil
 }
 
-func DecodeState( state string ) (interface{}, error) {
+func DecodeState( state string, target interface{}) error {
 
 	cipher, _ := base64.URLEncoding.DecodeString(state)
 
 	text, err := decrypt(cfg.AESKey, cipher)
 	if err != nil {
 		log.Printf("Error decrypting cipher")
-		return nil, err
+		return err
 	}
 
-	return text,nil
+	json.Unmarshal(text,target)
+	return nil
 }
 
 func encrypt(key, text []byte) ([]byte, error) {

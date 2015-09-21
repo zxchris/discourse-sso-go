@@ -147,6 +147,13 @@ func main() {
 
 func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
+	// TODO If we get a decodable state parameter in the request, then
+	// we have completed the authorisation round-trip, and thus can
+	// inspect the user state and construct the Discourse return.
+
+	// Otherwise, create the encoded state and populate the OAuth2
+	// provider selection template.
+
 	// When generating the Federated Login link in the template, encode the
 	// Discourse SSO nonce and return URL and signature, and pass through
 	// AuthBoss. When we get these value back (here) we do not verify the
@@ -263,8 +270,9 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		}
 		log.Printf("Encrypted state: '%s'\n", state)
 
-		yy, _ := DecodeState(state)
-		xx := yy.(ssoRequest)
+		// test state decode
+		var xx ssoRequest
+		DecodeState(state, &xx)
 		log.Printf("Decoded state:\n")
 		log.Println(xx)
 
