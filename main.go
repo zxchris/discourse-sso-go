@@ -2,9 +2,11 @@ package main
 
 import (
 	//"html/template"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
@@ -12,9 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"crypto/hmac"
-	"crypto/sha256"
-
 
 	"github.com/gorilla/pat"
 	"github.com/gorilla/securecookie"
@@ -42,16 +41,16 @@ type googleProfile struct {
 }
 
 type config struct {
-	CookieKey string
-	SessionKey string
-	GoogleClientID string
+	CookieKey          string
+	SessionKey         string
+	GoogleClientID     string
 	GoogleClientSecret string
-	BindAddr string
-	HMAC256Secret string
+	BindAddr           string
+	HMAC256Secret      string
 }
 
 type ssoRequest struct {
-	nonce string
+	nonce     string
 	returnUrl string
 }
 
@@ -60,9 +59,9 @@ var templates = template.Must(template.ParseFiles("assets/templates/providers.tm
 
 func main() {
 
-	cfg = config {
-		BindAddr: ":3100",
-		CookieKey: "NpEPi8pEjKVjLGJ6aYCS+VTCzi6BUuDzU0wrwXyf5uDPArtlofn2AG6aTMiPmN32909rsEWMNqJqhIVPGP3Exg==",
+	cfg = config{
+		BindAddr:   ":3100",
+		CookieKey:  "NpEPi8pEjKVjLGJ6aYCS+VTCzi6BUuDzU0wrwXyf5uDPArtlofn2AG6aTMiPmN32909rsEWMNqJqhIVPGP3Exg==",
 		SessionKey: "AbfYwmmt8UCwUuad9qvfNA9UCuN1cVcKJN1ofbiky6xCyyBj20whe40rJa3Su0W1WLWcPpO1taqJdsEI/65+Jg==",
 	}
 
@@ -114,11 +113,11 @@ func main() {
 	}
 	// Make sure login expires quickly, as we don't need or want to cache the
 	// login for long (user info is stored in memory and linked to by a cookie.
-  // If the server restarts, the cookie will be out of sync with the memory
-  // store (now empty) and generate "User is unknown" error).
+	// If the server restarts, the cookie will be out of sync with the memory
+	// store (now empty) and generate "User is unknown" error).
 	// We're just acting as a proxy between Discourse and OAuth2, so holding onto
 	// the login state is not necessary.
-  ab.ExpireAfter = 10; // 10 Second expiry of login
+	ab.ExpireAfter = 10 // 10 Second expiry of login
 	ab.Mailer = authboss.LogMailer(os.Stdout)
 	ab.CookieStoreMaker = NewCookieStorer
 	ab.SessionStoreMaker = NewCookieStorer
@@ -144,21 +143,23 @@ func main() {
 
 func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
-	if( verifyRequest(req) != true ) {
+	// When generating the Federated Login link in the template, encode the
+	// Discourse SSO nonce and return URL and signature, and pass through
+	// AuthBoss. When we get these value back (here) we do not verify the
+	// initial DiscourseSSO request, but the OAuth2 response, and if
+	// successful, generate the DiscourseSSO response.
+	if verifyRequest(req) != true {
 		w.WriteHeader(400)
 		w.Write([]byte("Invalid request"))
 		return
 	}
-	ssor, okay := decodeSSO(req)
-	if( okay == false){
+	ssor := decodeSSO(req)
+	if ssor == nil {
 		log.Printf("Cannot decode request")
 		return
-	} else {
-		log.Println(ssor)
 	}
 
-	// XXX Do we get the original requiest, which includes the return
-	// XXX URL, from the oauth2 state, or session?
+	log.Println(ssor)
 
 	// If the user is not signed in, show the selection page.
 	// Once the authentication is complete, the process re-directs
@@ -234,20 +235,19 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		q.Set("external_id", currentUID)
 		q.Set("name", currentUserName)
 
-		var payload = base64.URLEncoding.EncodeToString([]byte( q.Encode() ))
-		log.Printf("%s\n",payload)
+		var payload = base64.URLEncoding.EncodeToString([]byte(q.Encode()))
+		log.Printf("%s\n", payload)
 
 		sig := getSignature(payload)
 
 		u, _ = url.Parse("http://where.discourse.is")
 		q = u.Query()
-		q.Set( "sso", payload)
-		q.Set( "sig", hex.EncodeToString(sig))
+		q.Set("sso", payload)
+		q.Set("sig", hex.EncodeToString(sig))
 		u.RawQuery = q.Encode()
 		log.Println(u)
 
 		w.WriteHeader(201)
-		//w.Write([]byte(signature))
 		w.Write([]byte(u.String()))
 
 	} else {
@@ -256,47 +256,48 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 }
 
 // returns ssoRequest and error state
-func decodeSSO (req *http.Request) (*ssoRequest,bool) {
+func decodeSSO(req *http.Request) *ssoRequest {
 
 	query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
 
 	log.Printf("Request sso content: %s", string(query))
 
-	if(err!=nil){
-		return nil,true
+	if err != nil {
+		return nil
 	}
-	q,err := url.ParseQuery(string(query))
+	log.Printf("Decodeing request...")
+	q, err := url.ParseQuery(string(query))
 	log.Println(q)
-	ssor := ssoRequest {
-		nonce: "123",
+
+	ssor := &ssoRequest{}
+
+	if n, ok := q["nonce"]; ok {
+		ssor.nonce = n[0]
+	}
+	if n, ok := q["return"]; ok {
+		ssor.returnUrl = n[0]
 	}
 
-	return &ssor, false
+	return ssor
 }
 
-func getSignature( payload string ) []byte {
+func getSignature(payload string) []byte {
+
 	hmac_key, _ := base64.StdEncoding.DecodeString(cfg.HMAC256Secret)
 	mac := hmac.New(sha256.New, hmac_key)
 	mac.Write([]byte(payload))
 	return mac.Sum(nil)
 }
 
-func verifyRequest( req *http.Request) bool {
-	signature,err := base64.URLEncoding.DecodeString(req.FormValue("sig"))
+func verifyRequest(req *http.Request) bool {
+	signature, err := hex.DecodeString(req.FormValue("sig"))
 	payload := req.FormValue("sso")
 
-log.Printf("Signature bytes\n")
-log.Printf(base64.URLEncoding.EncodeToString(signature))
-
-	if( err != nil || payload == "") {
+	if err != nil || payload == "" {
 		return false
 	}
 	newsig := getSignature(payload)
-
-log.Printf("Newsig bytes\n")
-log.Printf(base64.URLEncoding.EncodeToString(newsig))
-
-	return hmac.Equal( newsig, signature)
+	return hmac.Equal(newsig, signature)
 }
 
 // {
@@ -344,8 +345,6 @@ log.Printf(base64.URLEncoding.EncodeToString(newsig))
 //
 //    return $self->redirect_to( $url->to_string );
 //}
-
-
 
 func logger(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
