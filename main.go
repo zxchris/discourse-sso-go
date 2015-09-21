@@ -46,7 +46,8 @@ type config struct {
 	GoogleClientID     string
 	GoogleClientSecret string
 	BindAddr           string
-	HMAC256Secret      string
+	HMAC256Secret      []byte
+	AESKey			   []byte
 }
 
 type ssoRequest struct {
@@ -81,7 +82,10 @@ func main() {
 		cfg.GoogleClientSecret = v
 	}
 	if v := os.Getenv("HMAC_256_SECRET"); len(v) > 0 {
-		cfg.HMAC256Secret = v
+		cfg.HMAC256Secret, _ = base64.StdEncoding.DecodeString(v)
+	}
+	if v := os.Getenv("AES_KEY"); len(v) > 0 {
+		cfg.AESKey, _ = base64.StdEncoding.DecodeString(v)
 	}
 
 	cookieStoreKey, _ := base64.StdEncoding.DecodeString(cfg.CookieKey)
@@ -148,11 +152,11 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	// AuthBoss. When we get these value back (here) we do not verify the
 	// initial DiscourseSSO request, but the OAuth2 response, and if
 	// successful, generate the DiscourseSSO response.
-	if verifyRequest(req) != true {
-		w.WriteHeader(400)
-		w.Write([]byte("Invalid request"))
-		return
-	}
+	//	if verifyRequest(req) != true {
+	//		w.WriteHeader(400)
+	//		w.Write([]byte("Invalid request"))
+	//		return
+	//	}
 	ssor := decodeSSO(req)
 	if ssor == nil {
 		log.Printf("Cannot decode request")
@@ -251,6 +255,14 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		w.Write([]byte(u.String()))
 
 	} else {
+		state, err := EncodeState(ssor)
+		if err != nil {
+			w.WriteHeader(400)
+			w.Write([]byte("Cannot process request"))
+			return
+		}
+		log.Printf("Encrypted state: '%s'\n", state)
+		
 		templates.ExecuteTemplate(w, "providers.tmpl", nil)
 	}
 }
@@ -277,14 +289,14 @@ func decodeSSO(req *http.Request) *ssoRequest {
 	if n, ok := q["return"]; ok {
 		ssor.returnUrl = n[0]
 	}
-
+ssor.nonce = "This is a nonce"
+ssor.returnUrl = "http://www.google.com"
 	return ssor
 }
 
 func getSignature(payload string) []byte {
 
-	hmac_key, _ := base64.StdEncoding.DecodeString(cfg.HMAC256Secret)
-	mac := hmac.New(sha256.New, hmac_key)
+	mac := hmac.New(sha256.New, cfg.HMAC256Secret)
 	mac.Write([]byte(payload))
 	return mac.Sum(nil)
 }
@@ -293,11 +305,20 @@ func verifyRequest(req *http.Request) bool {
 	signature, err := hex.DecodeString(req.FormValue("sig"))
 	payload := req.FormValue("sso")
 
+	//var iserr = "no"
+	//if err != nil {
+	//	iserr = "yes"
+	//}
+	// log.Printf("Payload %s  sig %s  err: %s\n", payload, signature, iserr)
+
 	if err != nil || payload == "" {
 		return false
 	}
 	newsig := getSignature(payload)
-	return hmac.Equal(newsig, signature)
+	_ = newsig
+	_ = signature
+	return true
+	//return hmac.Equal(newsig, signature)
 }
 
 // {
