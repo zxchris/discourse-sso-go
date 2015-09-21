@@ -50,10 +50,9 @@ type config struct {
 	HMAC256Secret string
 }
 
-type ssoPayload struct {
+type ssoRequest struct {
 	nonce string
-	email string
-	external_id string
+	returnUrl string
 }
 
 var cfg config
@@ -145,6 +144,13 @@ func main() {
 
 func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
+	ssor, okay := decodeSSO(req)
+	if( okay == false){
+		log.Printf("Cannot decode request")
+	} else {
+		log.Println(ssor)
+	}
+
 	// XXX Do we get the original requiest, which includes the return
 	// XXX URL, from the oauth2 state, or session?
 
@@ -216,8 +222,6 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
 		log.Printf("%+v\n", userInter)
 
-
-
 		u, _ := url.Parse("")
 		q := u.Query()
 		q.Set("email", currentEmail)
@@ -232,7 +236,6 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		u, _ = url.Parse("http://where.discourse.is")
 		q = u.Query()
 		q.Set( "sso", payload)
-		//q.Set( "sig", hex.EncodeToString(mac.Sum(nil)))
 		q.Set( "sig", hex.EncodeToString(sig))
 		u.RawQuery = q.Encode()
 		log.Println(u)
@@ -246,8 +249,24 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-//func decodeSSO (req *http.Request) {
-//}
+// returns ssoRequest and error state
+func decodeSSO (req *http.Request) (*ssoRequest,bool) {
+
+	query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
+
+	log.Printf("Request sso content: %s", string(query))
+
+	if(err!=nil){
+		return nil,true
+	}
+	q,err := url.ParseQuery(string(query))
+	log.Println(q)
+	ssor := ssoRequest {
+		nonce: "123",
+	}
+
+	return &ssor, false
+}
 
 func getSignature( payload string ) []byte {
 	hmac_key, _ := base64.StdEncoding.DecodeString(cfg.HMAC256Secret)
@@ -258,14 +277,11 @@ func getSignature( payload string ) []byte {
 
 func verifyRequest( req *http.Request) bool {
 	signature,err := base64.URLEncoding.DecodeString(req.FormValue("sig"))
-
-	if( err != nil ) {
+	payload := req.FormValue("sso")
+	if( err != nil || payload == "") {
 		return false
 	}
-
-	payload := req.FormValue("sso")
 	newsig := getSignature(payload)
-
 	return hmac.Equal( newsig, signature)
 }
 
