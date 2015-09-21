@@ -144,6 +144,10 @@ func main() {
 
 func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
+	if( verifyRequest(req) != true ) {
+		w.WriteHeader(400)
+		w.Write([]byte("Invalid request"))
+	}
 	ssor, okay := decodeSSO(req)
 	if( okay == false){
 		log.Printf("Cannot decode request")
@@ -278,6 +282,7 @@ func getSignature( payload string ) []byte {
 func verifyRequest( req *http.Request) bool {
 	signature,err := base64.URLEncoding.DecodeString(req.FormValue("sig"))
 	payload := req.FormValue("sso")
+
 	if( err != nil || payload == "") {
 		return false
 	}
