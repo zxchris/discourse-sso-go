@@ -182,12 +182,6 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	// Otherwise, create the encoded state and populate the OAuth2
 	// provider selection template.
 
-	// When generating the Federated Login link in the template, encode the
-	// Discourse SSO nonce and return URL and signature, and pass through
-	// AuthBoss. When we get these value back (here) we do not verify the
-	// initial DiscourseSSO request, but the OAuth2 response, and if
-	// successful, generate the DiscourseSSO response.
-
 	if state == "" {
 		if verifyRequest(req) != true {
 			w.WriteHeader(400)
@@ -205,7 +199,8 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
 	// If the user is not signed in, show the selection page.
 	// Once the authentication is complete, the process re-directs
-	// here with the original Discourse request
+	// here with the original Discourse request encoded in an encrypted
+	// state parameter.
 
 	currentUserName := ""
 	currentEmail := ""
@@ -290,10 +285,13 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		u.RawQuery = q.Encode()
 		log.Println(u)
 
+		// TODO Redirect here
 		w.WriteHeader(201)
 		w.Write([]byte(u.String()))
 
 	} else {
+		// When generating the Federated Login link in the template, encode the
+		// Discourse SSO nonce and return URL into an encrypted state.
 		state, err := EncodeState(*ssor)
 		if err != nil {
 			w.WriteHeader(400)
