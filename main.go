@@ -1,19 +1,21 @@
 package main
 
 import (
-	//"html/template"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/zxchris/discourse-sso-go/assets"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+
+	"gopkg.in/unrolled/render.v1"
 
 	"github.com/gorilla/pat"
 	"github.com/gorilla/securecookie"
@@ -58,6 +60,11 @@ type SSORequest struct {
 var cfg config
 var templates = template.Must(template.ParseFiles("assets/templates/providers.tmpl"))
 
+var r = render.New(render.Options{
+	Asset:      assets.Asset,
+	AssetNames: assets.AssetNames,
+})
+
 func main() {
 
 	cfg = config{
@@ -89,7 +96,7 @@ func main() {
 	}
 
 	if len(cfg.AESKey) == 0 {
-		panic("No AES_KEY environment variable set\n")
+		log.Fatal("No AES_KEY environment variable set\n")
 	}
 
 	cookieStoreKey, _ := base64.StdEncoding.DecodeString(cfg.CookieKey)
@@ -101,7 +108,6 @@ func main() {
 	// Configure Authboss
 	ab.RootURL = "http://localhost:3100"
 	ab.MountPath = "/auth"
-	//ab.Storer = database
 	ab.OAuth2Storer = database
 
 	ab.OAuth2Providers = map[string]authboss.OAuth2Provider{
@@ -138,6 +144,7 @@ func main() {
 	pat := pat.New()
 	pat.PathPrefix("/auth").Handler(ab.NewRouter())
 	pat.Path("/discourse").Methods("GET").HandlerFunc(discourseSSO)
+
 	pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
 
 	stack := alice.New(logger, ab.ExpireMiddleware).Then(pat)
@@ -287,7 +294,7 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		}
 		log.Printf("Encrypted state: '%s'\n", state)
 
-		templates.ExecuteTemplate(w, "providers.tmpl", map[string]string{
+		r.HTML(w, http.StatusOK, "providers", map[string]string{
 			"State": state,
 		})
 	}
@@ -333,20 +340,14 @@ func verifyRequest(req *http.Request) bool {
 	signature, err := hex.DecodeString(req.FormValue("sig"))
 	payload := req.FormValue("sso")
 
-	//var iserr = "no"
-	//if err != nil {
-	//	iserr = "yes"
-	//}
-	// log.Printf("Payload %s  sig %s  err: %s\n", payload, signature, iserr)
-
 	if err != nil || payload == "" {
 		return false
 	}
 	newsig := getSignature(payload)
-	_ = newsig
-	_ = signature
-	return true
-	//return hmac.Equal(newsig, signature)
+	//_ = newsig
+	//_ = signature
+	//return false
+	return hmac.Equal(newsig, signature)
 }
 
 func logger(h http.Handler) http.Handler {
