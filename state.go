@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/base64"
 	"errors"
 	"io"
 	"log"
@@ -33,7 +32,7 @@ func EncodeState(v interface{}) (string, error) {
 	return res, nil
 }
 
-func DecodeState( state string, target interface{}) error {
+func DecodeState(state string, target interface{}) error {
 
 	cipher, _ := base64.URLEncoding.DecodeString(state)
 
@@ -43,7 +42,7 @@ func DecodeState( state string, target interface{}) error {
 		return err
 	}
 
-	json.Unmarshal(text,target)
+	json.Unmarshal(text, target)
 	return nil
 }
 

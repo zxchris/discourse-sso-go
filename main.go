@@ -50,7 +50,7 @@ type config struct {
 	AESKey             []byte
 }
 
-type ssoRequest struct {
+type SSORequest struct {
 	Nonce     string
 	ReturnURL string
 }
@@ -88,6 +88,10 @@ func main() {
 		cfg.AESKey, _ = base64.StdEncoding.DecodeString(v)
 	}
 
+	if len(cfg.AESKey) == 0 {
+		panic("No AES_KEY environment variable set\n")
+	}
+
 	cookieStoreKey, _ := base64.StdEncoding.DecodeString(cfg.CookieKey)
 	sessionStoreKey, _ := base64.StdEncoding.DecodeString(cfg.SessionKey)
 
@@ -121,7 +125,7 @@ func main() {
 	// store (now empty) and generate "User is unknown" error).
 	// We're just acting as a proxy between Discourse and OAuth2, so holding onto
 	// the login state is not necessary.
-	ab.ExpireAfter = 10 // 10 Second expiry of login
+	ab.ExpireAfter = 5 // 5 Second expiry of login
 	ab.Mailer = authboss.LogMailer(os.Stdout)
 	ab.CookieStoreMaker = NewCookieStorer
 	ab.SessionStoreMaker = NewCookieStorer
@@ -147,9 +151,18 @@ func main() {
 
 func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
-	// TODO If we get a decodable state parameter in the request, then
+	// If we get a decodable state parameter in the request, then
 	// we have completed the authorisation round-trip, and thus can
 	// inspect the user state and construct the Discourse return.
+
+	ssor := &SSORequest{}
+
+	state := req.FormValue("state")
+	if state != "" {
+		if err := DecodeState(state, ssor); err != nil {
+			state = ""
+		}
+	}
 
 	// Otherwise, create the encoded state and populate the OAuth2
 	// provider selection template.
@@ -159,15 +172,18 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	// AuthBoss. When we get these value back (here) we do not verify the
 	// initial DiscourseSSO request, but the OAuth2 response, and if
 	// successful, generate the DiscourseSSO response.
-	//	if verifyRequest(req) != true {
-	//		w.WriteHeader(400)
-	//		w.Write([]byte("Invalid request"))
-	//		return
-	//	}
-	ssor := decodeSSO(req)
-	if ssor == nil {
-		log.Printf("Cannot decode request")
-		return
+
+	if state != "" {
+		//	if verifyRequest(req) != true {
+		//		w.WriteHeader(400)
+		//		w.Write([]byte("Invalid request"))
+		//		return
+		//	}
+		ssor = decodeSSO(req)
+		if ssor == nil {
+			log.Printf("Cannot decode request")
+			return
+		}
 	}
 
 	log.Println(ssor)
@@ -178,8 +194,8 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 
 	currentUserName := ""
 	currentEmail := ""
-	//currentPicture := ""
 	currentUID := ""
+	//currentPicture := ""
 	//isAdmin := false
 
 	_ = currentUserName
@@ -187,7 +203,9 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	_ = currentUID
 
 	userInter, err := ab.CurrentUser(w, req)
-	if userInter != nil && err == nil {
+
+	// State is set, and we have user info, so we can return login info to Discourse
+	if state != "" && userInter != nil && err == nil {
 
 		user := userInter.(*User)
 
@@ -245,16 +263,15 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		q.Set("email", currentEmail)
 		q.Set("external_id", currentUID)
 		q.Set("name", currentUserName)
+		q.Set("nonce", ssor.Nonce)
 
 		var payload = base64.URLEncoding.EncodeToString([]byte(q.Encode()))
 		log.Printf("%s\n", payload)
 
-		sig := getSignature(payload)
-
-		u, _ = url.Parse("http://where.discourse.is")
+		u, _ = url.Parse(ssor.ReturnURL)
 		q = u.Query()
 		q.Set("sso", payload)
-		q.Set("sig", hex.EncodeToString(sig))
+		q.Set("sig", hex.EncodeToString(getSignature(payload)))
 		u.RawQuery = q.Encode()
 		log.Println(u)
 
@@ -265,48 +282,42 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		state, err := EncodeState(*ssor)
 		if err != nil {
 			w.WriteHeader(400)
-			w.Write([]byte("Cannot process request"))
+			w.Write([]byte("Cannot encode request state"))
 			return
 		}
 		log.Printf("Encrypted state: '%s'\n", state)
 
-		// test state decode
-		var xx ssoRequest
-		DecodeState(state, &xx)
-		log.Printf("Decoded state:\n")
-		log.Println(xx)
-
 		templates.ExecuteTemplate(w, "providers.tmpl", map[string]string{
 			"State": state,
-			})
+		})
 	}
 }
 
 // returns ssoRequest and error state
-func decodeSSO(req *http.Request) *ssoRequest {
+func decodeSSO(req *http.Request) *SSORequest {
 
-		query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
-	
-		log.Printf("Request sso content: %s", string(query))
-	
-		if err != nil {
-			return nil
-		}
-		log.Printf("Decodeing request...")
-		q, err := url.ParseQuery(string(query))
-		log.Println(q)
+	query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
 
-		ssor := &ssoRequest{}
+	log.Printf("Request sso content: %s", string(query))
 
-		if n, ok := q["nonce"]; ok {
-			ssor.Nonce = n[0]
-		}
-		if n, ok := q["return"]; ok {
-			ssor.ReturnURL = n[0]
-		}
+	if err != nil {
+		return nil
+	}
+	log.Printf("Decodeing request...")
+	q, err := url.ParseQuery(string(query))
+	log.Println(q)
 
-	ssor.Nonce = "This is a nonce"
-	ssor.ReturnURL = "http://www.google.com"
+	ssor := &SSORequest{}
+
+	if n, ok := q["nonce"]; ok {
+		ssor.Nonce = n[0]
+	}
+	if n, ok := q["return"]; ok {
+		ssor.ReturnURL = n[0]
+	}
+
+	//	ssor.Nonce = "This is a nonce"
+	//	ssor.ReturnURL = "http://www.google.com"
 
 	return ssor
 }
@@ -338,52 +349,6 @@ func verifyRequest(req *http.Request) bool {
 	//return hmac.Equal(newsig, signature)
 }
 
-// {
-//    # Validate SSO signature
-//    #
-//    my $signature = $self->param('sig');
-//    my $payload   = $self->param('sso');
-//
-//    my $secret    = $self->config->{discourse}->{sso_secret};
-//    my $check_sig = hmac_sha256_hex( $payload, $secret );
-//
-//    return $self->render( json => { error => "Invalid request"}, status => 401 ) unless $check_sig eq $signature;
-//
-//    my $email = $self->user_email;
-//    my $id    = $self->user_id;
-//
-//    # Decode the SSO payload
-//    my $req = Mojo::URL->new();
-//    $req->query( decode_base64( $payload ) );
-//    my $nonce  = $req->query->param('nonce');
-//    my $return = $req->query->param('return_sso_url');
-//
-//    $nonce   =~ s/^nonce=//; # Strip the nonce= off the front
-//
-//    # Use the configured return URL, falling back to the SSO payload provided
-//    my $url = Mojo::URL->new( $self->config->{discourse}->{sso_callback_url} || $return );
-//
-//    my $username;
-//    $_ = $self->user_email;
-//    s/(\w+?)\@/$username = $1/e; # Use first part of email as username
-//
-//    $url->query(nonce    => $nonce,
-//                #name     => '',
-//                #username => $username,
-//                email     => $self->user_email,
-//                external_id => $self->user_id
-//               );
-//
-//
-//    $payload = encode_base64( $url->query->to_string );
-//
-//    $signature  = hmac_sha256_hex( $payload, $secret );
-//
-//    $url->query( sso => $payload, sig => $signature );
-//
-//    return $self->redirect_to( $url->to_string );
-//}
-
 func logger(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("\n%s %s %s\n", r.Method, r.URL.Path, r.Proto)
@@ -404,3 +369,5 @@ func logger(h http.Handler) http.Handler {
 		h.ServeHTTP(w, r)
 	})
 }
+
+// end
