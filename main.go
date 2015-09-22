@@ -173,12 +173,12 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 	// initial DiscourseSSO request, but the OAuth2 response, and if
 	// successful, generate the DiscourseSSO response.
 
-	if state != "" {
-		//	if verifyRequest(req) != true {
-		//		w.WriteHeader(400)
-		//		w.Write([]byte("Invalid request"))
-		//		return
-		//	}
+	if state == "" {
+		if verifyRequest(req) != true {
+			w.WriteHeader(400)
+			w.Write([]byte("Invalid request"))
+			return
+		}
 		ssor = decodeSSO(req)
 		if ssor == nil {
 			log.Printf("Cannot decode request")
