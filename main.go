@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/zxchris/discourse-sso-go/assets"
+	"github.com/zxchris/discourse-sso-go/static"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -146,6 +147,13 @@ func main() {
 	pat.Path("/discourse").Methods("GET").HandlerFunc(discourseSSO)
 
 	pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
+
+	var staticConfig = static.Config{
+		Asset: asset.Asset,
+	}
+	//	AssetNames: assets.AssetNames,
+	//}
+	static.Register(staticConfig, pat)
 
 	stack := alice.New(logger, ab.ExpireMiddleware).Then(pat)
 
