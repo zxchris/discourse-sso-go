@@ -68,8 +68,8 @@ func (s MemStorer) Create(key string, attr authboss.Attributes) error {
 	nextUserID++
 
 	s.Users[key] = user
-	fmt.Println("Create")
-	spew.Dump(s.Users)
+	//fmt.Println("Create")
+	//spew.Dump(s.Users)
 	return nil
 }
 

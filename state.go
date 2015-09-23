@@ -17,9 +17,8 @@ func EncodeState(v interface{}) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	log.Println(v)
 
-	log.Printf("first json: '%s'\n", string(stateJson))
+	//log.Printf("first json: '%s'\n", string(stateJson))
 
 	cipher, err := encrypt(cfg.AESKey, stateJson)
 	if err != nil {

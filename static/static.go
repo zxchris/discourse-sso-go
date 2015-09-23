@@ -1,7 +1,6 @@
 package static
 
 import (
-	"mime"
 	"net/http"
 	"strings"
 
@@ -27,28 +26,20 @@ func Register(config Config, r *pat.Router) {
 			path := strings.TrimPrefix(file, "static")
 			log.Printf("registering handler for static asset %s\n", path)
 
-			var mimeType string
-			switch {
-			case strings.HasSuffix(path, ".css"):
-				mimeType = "text/css"
-			case strings.HasSuffix(path, ".js"):
-				mimeType = "application/javascript"
-			default:
-				mimeType = mime.TypeByExtension(path) // Should rather use type-by-file-content or whatever it is......
+			b, err := config.Asset()("static" + path)
+			if err != nil {
+				panic(err)
 			}
+
+			mimeType := http.DetectContentType(b)
 
 			log.Printf("using mime type %s\n", mimeType)
 
 			r.Path(path).Methods("GET").HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-				if b, err := config.Asset()("static" + path); err == nil {
-					w.Header().Set("Content-Type", mimeType)
-					w.Header().Set("Cache-control", "public, max-age=259200")
-					w.WriteHeader(200)
-					w.Write(b)
-					return
-				}
-				// This should never happen!
-				r.NotFoundHandler.ServeHTTP(w, req)
+				w.Header().Set("Content-Type", mimeType)
+				w.Header().Set("Cache-control", "public, max-age=259200")
+				w.WriteHeader(200)
+				w.Write(b)
 			})
 		}
 	}

@@ -62,8 +62,15 @@ var cfg config
 var templates = template.Must(template.ParseFiles("assets/templates/providers.tmpl"))
 
 type staticConfig struct {
-	Asset      func(string) ([]byte, error)
-	AssetNames func() []string
+	//	asset      func(string) ([]byte, error)
+	//	assetNames func() []string
+}
+
+func (s staticConfig) Asset() func(string) ([]byte, error) {
+	return assets.Asset
+}
+func (s staticConfig) AssetNames() func() []string {
+	return assets.AssetNames
 }
 
 var r = render.New(render.Options{
@@ -151,12 +158,9 @@ func main() {
 	pat.PathPrefix("/auth").Handler(ab.NewRouter())
 	pat.Path("/discourse").Methods("GET").HandlerFunc(discourseSSO)
 
-	pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
+	//pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
 
-	var myconf = staticConfig{
-		Asset:      assets.Asset,
-		AssetNames: assets.AssetNames,
-	}
+	var myconf = staticConfig{}
 	static.Register(myconf, pat)
 
 	stack := alice.New(logger, ab.ExpireMiddleware).Then(pat)
@@ -199,8 +203,7 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
-	log.Println(ssor)
-
+	//log.Println(ssor)
 	// If the user is not signed in, show the selection page.
 	// Once the authentication is complete, the process re-directs
 	// here with the original Discourse request encoded in an encrypted
@@ -224,7 +227,7 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		user := userInter.(*User)
 
 		if user.Name == "" && user.Oauth2Provider == "google" {
-			log.Printf("NO USER\n")
+			//log.Printf("NO USER\n")
 
 			req, err := http.NewRequest("GET", "https://www.googleapis.com/userinfo/v2/me", nil)
 			if err != nil {
@@ -270,8 +273,6 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		//currentPicture = userInter.(*User).GooglePicture
 		//isAdmin = userInter.(*User).IsAdmin
 
-		log.Printf("%+v\n", userInter)
-
 		u, _ := url.Parse("")
 		q := u.Query()
 		q.Set("email", currentEmail)
@@ -280,18 +281,18 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 		q.Set("nonce", ssor.Nonce)
 
 		var payload = base64.URLEncoding.EncodeToString([]byte(q.Encode()))
-		log.Printf("%s\n", payload)
+		//log.Printf("%s\n", payload)
 
 		u, _ = url.Parse(ssor.ReturnURL)
 		q = u.Query()
 		q.Set("sso", payload)
 		q.Set("sig", hex.EncodeToString(getSignature(payload)))
 		u.RawQuery = q.Encode()
-		log.Println(u)
+		//log.Println(u)
 
-		// TODO Redirect here
-		w.WriteHeader(201)
-		w.Write([]byte(u.String()))
+		http.Redirect(w, req, u.String(), 302)
+		//w.WriteHeader(201)
+		//w.Write([]byte(u.String()))
 
 	} else {
 		// When generating the Federated Login link in the template, encode the
@@ -302,7 +303,6 @@ func discourseSSO(w http.ResponseWriter, req *http.Request) {
 			w.Write([]byte("Cannot encode request state"))
 			return
 		}
-		log.Printf("Encrypted state: '%s'\n", state)
 
 		r.HTML(w, http.StatusOK, "providers", map[string]string{
 			"State": state,
@@ -315,14 +315,13 @@ func decodeSSO(req *http.Request) *SSORequest {
 
 	query, err := base64.URLEncoding.DecodeString(req.FormValue("sso"))
 
-	log.Printf("Request sso content: %s", string(query))
+	//log.Printf("Request sso content: %s", string(query))
 
 	if err != nil {
 		return nil
 	}
-	log.Printf("Decodeing request...")
 	q, err := url.ParseQuery(string(query))
-	log.Println(q)
+	//log.Println(q)
 
 	ssor := &SSORequest{}
 
@@ -332,9 +331,6 @@ func decodeSSO(req *http.Request) *SSORequest {
 	if n, ok := q["return"]; ok {
 		ssor.ReturnURL = n[0]
 	}
-
-	//	ssor.Nonce = "This is a nonce"
-	//	ssor.ReturnURL = "http://www.google.com"
 
 	return ssor
 }
@@ -354,9 +350,6 @@ func verifyRequest(req *http.Request) bool {
 		return false
 	}
 	newsig := getSignature(payload)
-	//_ = newsig
-	//_ = signature
-	//return false
 	return hmac.Equal(newsig, signature)
 }
 
@@ -365,7 +358,7 @@ func logger(h http.Handler) http.Handler {
 		fmt.Printf("\n%s %s %s\n", r.Method, r.URL.Path, r.Proto)
 		session, err := sessionStore.Get(r, sessionCookieName)
 		if err == nil {
-			fmt.Print("Session: ")
+			//fmt.Print("Session: ")
 			first := true
 			for k, v := range session.Values {
 				if first {
@@ -373,7 +366,9 @@ func logger(h http.Handler) http.Handler {
 				} else {
 					fmt.Print(", ")
 				}
-				fmt.Printf("%s = %v", k, v)
+				//fmt.Printf("%s = %v", k, v)
+				_ = k
+				_ = v
 			}
 			fmt.Println()
 		}
