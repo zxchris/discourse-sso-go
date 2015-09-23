@@ -61,6 +61,11 @@ type SSORequest struct {
 var cfg config
 var templates = template.Must(template.ParseFiles("assets/templates/providers.tmpl"))
 
+type staticConfig struct {
+	Asset      func(string) ([]byte, error)
+	AssetNames func() []string
+}
+
 var r = render.New(render.Options{
 	Asset:      assets.Asset,
 	AssetNames: assets.AssetNames,
@@ -148,12 +153,11 @@ func main() {
 
 	pat.PathPrefix("/images").Methods("GET").Handler(http.FileServer(http.Dir("/assets/images/")))
 
-	var staticConfig = static.Config{
-		Asset: asset.Asset,
+	var myconf = staticConfig{
+		Asset:      assets.Asset,
+		AssetNames: assets.AssetNames,
 	}
-	//	AssetNames: assets.AssetNames,
-	//}
-	static.Register(staticConfig, pat)
+	static.Register(myconf, pat)
 
 	stack := alice.New(logger, ab.ExpireMiddleware).Then(pat)
 
